@@ -101,12 +101,12 @@ guess_number/
 
 ```python
 ROOM_CLEANUP_DELAY = 120  # 空房间清理延迟（秒）
-PORT = 5426               # 服务端口
+PORT = xxxx               # 服务端口
 ```
 
 ## 注意事项
 
-1. 确保服务器防火墙开放 5426 端口
+1. 确保服务器防火墙开放 xxxx 端口
 2. 建议使用现代浏览器访问（Chrome, Firefox, Safari, Edge）
 3. 长时间未操作的空房间会被自动清理
 
