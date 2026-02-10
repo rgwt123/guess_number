@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多人在线猜数字游戏</title>
+    <!-- Tailwind CSS v3 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#10b981',
+                        accent: '#f59e0b',
+                        dark: '#1e3a8a',
+                        light: '#eff6ff'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .text-shadow {
+                text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .card-shadow {
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            }
+            .input-focus {
+                @apply focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none;
+            }
+            .btn-hover {
+                @apply hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200;
+            }
+            .history-item {
+                @apply border-l-4 border-primary pl-3 py-1 mb-2 transition-all duration-300 hover:bg-light hover:pl-4;
+            }
+            .history-match {
+                @apply bg-green-100 border-green-500;
+            }
+            .chat-message {
+                @apply py-1 px-2 rounded;
+            }
+            .chat-self {
+                @apply bg-blue-100 text-blue-800;
+            }
+            .chat-other {
+                @apply bg-gray-100 text-gray-800;
+            }
+            .chat-system {
+                @apply bg-yellow-100 text-yellow-800 text-center text-sm italic;
+            }
+            .player-card {
+                @apply bg-white rounded-lg p-3 card-shadow transition-all duration-300;
+            }
+            .player-card.active {
+                @apply ring-2 ring-primary bg-blue-50;
+            }
+            .player-card.finished {
+                @apply ring-2 ring-green-500 bg-green-50;
+            }
+            .player-card.offline {
+                @apply opacity-50;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen font-sans text-gray-800">
+    <div class="container mx-auto px-4 py-4 max-w-6xl">
+        <!-- 游戏标题 -->
+        <header class="text-center mb-4">
+            <h1 class="text-3xl md:text-4xl font-bold text-primary text-shadow mb-1">多人在线猜数字</h1>
+            <p class="text-gray-600 text-sm">和朋友们一起挑战逻辑思维！</p>
+        </header>
+
+        <!-- 连接状态 -->
+        <div id="connection-status" class="fixed top-4 right-4 z-50">
+            <span id="status-indicator" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                <span class="w-2 h-2 bg-yellow-500 rounded-full mr-2 animate-pulse"></span>
+                连接中...
+            </span>
+        </div>
+
+        <!-- 用户名设置面板 -->
+        <div id="name-panel" class="bg-white rounded-xl card-shadow p-6 max-w-md mx-auto">
+            <h2 class="text-xl font-bold text-dark mb-4 text-center">设置用户名</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">用户名（最多5个字符）</label>
+                    <input type="text" id="username-input" maxlength="5" 
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg input-focus text-center text-lg"
+                        placeholder="输入用户名">
+                </div>
+                <button id="set-name-btn" 
+                    class="w-full bg-primary hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg btn-hover">
+                    <i class="fa fa-user mr-2"></i> 确认
+                </button>
+            </div>
+        </div>
+
+        <!-- 大厅面板 -->
+        <div id="lobby-panel" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <!-- 左侧：创建房间 -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-xl card-shadow p-4 sticky top-4">
+                        <h2 class="text-lg font-bold text-dark mb-3">
+                            <i class="fa fa-plus-circle mr-2 text-primary"></i>创建房间
+                        </h2>
+                        <form id="create-room-form" class="space-y-3">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 mb-1">人数限制</label>
+                                <input type="range" id="create-max-players" min="1" max="5" value="2" 
+                                    class="w-full h-2 bg-gray-200 rounded-lg cursor-pointer accent-primary">
+                                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                    <span>1人</span>
+                                    <span id="create-max-players-value" class="font-bold text-primary">2人</span>
+                                    <span>5人</span>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 mb-1">数字位数</label>
+                                <input type="range" id="create-digit-count" min="3" max="8" value="4" 
+                                    class="w-full h-2 bg-gray-200 rounded-lg cursor-pointer accent-primary">
+                                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                    <span>3位</span>
+                                    <span id="create-digit-count-value" class="font-bold text-primary">4位</span>
+                                    <span>8位</span>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-center space-x-4">
+                                <label class="flex items-center text-sm">
+                                    <input type="checkbox" id="create-include-zero" checked 
+                                        class="w-4 h-4 text-primary rounded">
+                                    <span class="ml-2">包含0</span>
+                                </label>
+                                <label class="flex items-center text-sm">
+                                    <input type="checkbox" id="create-allow-repeat" 
+                                        class="w-4 h-4 text-primary rounded">
+                                    <span class="ml-2">允许重复</span>
+                                </label>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 mb-1">游戏模式</label>
+                                <select id="create-game-mode" 
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg input-focus text-sm">
+                                    <option value="free">自由模式（各自猜测）</option>
+                                    <option value="turn">轮次模式（轮流猜测）</option>
+                                </select>
+                            </div>
+                            
+                            <div id="time-limit-container">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">
+                                    时间限制: <span id="create-time-limit-value" class="text-primary font-bold">不限时</span>
+                                </label>
+                                <input type="range" id="create-time-limit" min="0" max="180" value="0" step="10"
+                                    class="w-full h-2 bg-gray-200 rounded-lg cursor-pointer accent-primary">
+                                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                    <span>不限时</span>
+                                    <span>180秒</span>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" 
+                                class="w-full bg-secondary hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg btn-hover">
+                                <i class="fa fa-play mr-2"></i> 创建房间
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- 右侧：房间列表 -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-xl card-shadow p-4">
+                        <div class="flex justify-between items-center mb-3">
+                            <h2 class="text-lg font-bold text-dark">
+                                <i class="fa fa-list mr-2 text-primary"></i>房间列表
+                            </h2>
+                            <button id="refresh-rooms-btn" class="text-sm text-primary hover:text-blue-600">
+                                <i class="fa fa-refresh mr-1"></i>刷新
+                            </button>
+                        </div>
+                        <div id="room-list" class="space-y-2 max-h-96 overflow-y-auto">
+                            <p class="text-gray-500 text-center py-8">暂无可用房间</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 房间面板 -->
+        <div id="room-panel" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <!-- 左侧：玩家列表 -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-xl card-shadow p-4">
+                        <div class="flex justify-between items-center mb-3">
+                            <h2 class="text-lg font-bold text-dark">
+                                <i class="fa fa-users mr-2 text-primary"></i>玩家
+                            </h2>
+                            <span id="room-id-display" class="text-xs bg-gray-100 px-2 py-1 rounded font-mono"></span>
+                        </div>
+                        <div id="player-list" class="space-y-2">
+                            <!-- 玩家卡片 -->
+                        </div>
+                        <div class="mt-4 space-y-2">
+                            <button id="ready-btn" 
+                                class="w-full bg-accent hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg btn-hover hidden">
+                                <i class="fa fa-check mr-2"></i> 准备
+                            </button>
+                            <button id="start-game-btn" 
+                                class="w-full bg-secondary hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg btn-hover hidden">
+                                <i class="fa fa-play mr-2"></i> 开始游戏
+                            </button>
+                            <button id="leave-room-btn" 
+                                class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg">
+                                <i class="fa fa-sign-out mr-2"></i> 离开房间
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 房间设置信息 -->
+                    <div class="bg-white rounded-xl card-shadow p-4 mt-4">
+                        <h3 class="text-sm font-bold text-gray-700 mb-2">房间设置</h3>
+                        <div id="room-settings-info" class="text-sm text-gray-600 space-y-1">
+                            <!-- 设置信息 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：聊天区域 -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-xl card-shadow p-4 h-full flex flex-col">
+                        <h2 class="text-lg font-bold text-dark mb-3">
+                            <i class="fa fa-comments mr-2 text-primary"></i>聊天室
+                        </h2>
+                        <div id="chat-container" class="flex-1 bg-gray-50 rounded-lg p-3 overflow-y-auto max-h-96 min-h-64 space-y-1">
+                            <!-- 聊天消息 -->
+                        </div>
+                        <form id="chat-form" class="mt-3 flex">
+                            <input type="text" id="chat-input" maxlength="100"
+                                class="flex-1 px-4 py-2 border border-gray-300 rounded-l-lg input-focus"
+                                placeholder="输入消息...">
+                            <button type="submit" 
+                                class="bg-primary hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r-lg">
+                                <i class="fa fa-send"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 游戏面板 -->
+        <div id="game-panel" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                <!-- 左侧：玩家进度 -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-xl card-shadow p-4 sticky top-4">
+                        <h2 class="text-lg font-bold text-dark mb-3">
+                            <i class="fa fa-trophy mr-2 text-primary"></i>游戏进度
+                        </h2>
+                        <div id="game-player-list" class="space-y-2 max-h-96 overflow-y-auto">
+                            <!-- 玩家进度卡片 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 中间：游戏区域 -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-xl card-shadow p-4">
+                        <div class="text-center mb-4">
+                            <h2 class="text-xl font-bold text-dark">游戏进行中</h2>
+                            <p id="game-mode-display" class="text-sm text-gray-600 mt-1"></p>
+                            <p id="turn-indicator" class="text-sm font-bold text-primary mt-1 hidden"></p>
+                            <!-- 倒计时显示 -->
+                            <div id="timer-container" class="hidden mt-2">
+                                <div class="inline-flex items-center bg-red-50 text-red-600 px-4 py-2 rounded-lg">
+                                    <i class="fa fa-clock-o mr-2"></i>
+                                    <span class="text-lg font-bold" id="timer-display">--</span>
+                                    <span class="text-xs ml-1">秒</span>
+                                </div>
+                            </div>
+                            <!-- 游戏规则显示 -->
+                            <div id="game-rules" class="mt-3 bg-blue-50 rounded-lg p-3 text-xs text-gray-600">
+                                <!-- 规则内容由JS动态填充 -->
+                            </div>
+                        </div>
+
+                        <!-- 猜测输入 -->
+                        <div class="mb-4">
+                            <form id="game-guess-form" class="flex">
+                                <input type="text" id="game-guess-input" 
+                                    class="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg input-focus text-center text-xl tracking-widest"
+                                    placeholder="输入数字">
+                                <button type="submit" 
+                                    class="bg-secondary hover:bg-green-600 text-white font-bold py-3 px-6 rounded-r-lg btn-hover">
+                                    猜测
+                                </button>
+                            </form>
+                            <p id="game-guess-error" class="text-red-500 text-sm mt-2 text-center hidden"></p>
+                        </div>
+
+                        <!-- 我的历史记录 -->
+                        <div>
+                            <h3 class="font-bold text-gray-700 mb-2">
+                                <i class="fa fa-history mr-2"></i>我的猜测记录
+                            </h3>
+                            <div id="my-history" class="max-h-48 overflow-y-auto space-y-1">
+                                <p class="text-gray-500 text-sm italic text-center py-4">还没有猜测记录</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：聊天 -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-xl card-shadow p-4 h-full flex flex-col">
+                        <h2 class="text-lg font-bold text-dark mb-3">
+                            <i class="fa fa-comments mr-2 text-primary"></i>聊天
+                        </h2>
+                        <div id="game-chat-container" class="flex-1 bg-gray-50 rounded-lg p-2 overflow-y-auto max-h-96 min-h-48 space-y-1 text-sm">
+                            <!-- 聊天消息 -->
+                        </div>
+                        <form id="game-chat-form" class="mt-2 flex">
+                            <input type="text" id="game-chat-input" maxlength="100"
+                                class="flex-1 px-2 py-1 border border-gray-300 rounded-l text-sm input-focus"
+                                placeholder="输入消息...">
+                            <button type="submit" class="bg-primary hover:bg-blue-600 text-white px-3 rounded-r text-sm">
+                                <i class="fa fa-send"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 游戏结束面板 -->
+        <div id="result-panel" class="hidden">
+            <div class="bg-white rounded-xl card-shadow p-6 max-w-lg mx-auto text-center">
+                <div class="inline-block p-4 rounded-full bg-green-100 text-green-500 mb-4">
+                    <i class="fa fa-trophy text-5xl"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-secondary mb-2">游戏结束！</h2>
+                <p class="text-gray-600 mb-4">
+                    正确答案是: <span id="result-answer" class="font-bold text-primary text-xl"></span>
+                </p>
+                
+                <div id="result-list" class="text-left bg-gray-50 rounded-lg p-4 mb-4 space-y-2">
+                    <!-- 结果列表 -->
+                </div>
+                
+                <div class="space-y-2">
+                    <button id="play-again-btn" 
+                        class="w-full bg-secondary hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg btn-hover">
+                        <i class="fa fa-refresh mr-2"></i> 再来一局
+                    </button>
+                    <button id="back-to-lobby-btn" 
+                        class="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg btn-hover">
+                        <i class="fa fa-list mr-2"></i> 返回大厅
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <footer class="mt-8 text-center text-gray-500 text-sm">
+            <p>© 2025 多人在线猜数字游戏 | 服务器: 8.147.57.62:5426</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='game.js') }}"></script>
+</body>
+</html>

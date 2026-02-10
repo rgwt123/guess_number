@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>猜数字游戏</title>
+    <!-- Tailwind CSS v3 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- 统一的 Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#10b981',
+                        accent: '#f59e0b',
+                        dark: '#1e3a8a',
+                        light: '#eff6ff'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    animation: {
+                        'bounce-light': 'bounce 2s infinite',
+                        'pulse-light': 'pulse 3s infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .text-shadow {
+                text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .card-shadow {
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            }
+            .input-focus {
+                @apply focus:ring-2 focus:ring-primary focus:border-primary focus:outline-none;
+            }
+            .btn-hover {
+                @apply hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200;
+            }
+            .history-item {
+                @apply border-l-4 border-primary pl-3 py-1 mb-2 transition-all duration-300 hover:bg-light hover:pl-4;
+            }
+            .history-match {
+                @apply bg-green-100 border-green-500;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen font-sans text-gray-800">
+    <div class="container mx-auto px-4 py-8 max-w-3xl">
+        <!-- 游戏标题 -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-primary text-shadow mb-2">猜数字游戏</h1>
+            <p class="text-gray-600">挑战你的逻辑思维，猜出正确的数字组合！</p>
+        </header>
+
+        <!-- 游戏容器 -->
+        <div class="bg-white rounded-xl card-shadow overflow-hidden">
+            <!-- 设置面板 -->
+            <div id="settings-panel" class="p-6 border-b border-gray-200">
+                <h2 class="text-2xl font-bold text-dark mb-4">游戏设置</h2>
+                <form id="settings-form" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- 数字位数设置 -->
+                        <div>
+                            <label for="digit-count" class="block text-sm font-medium text-gray-700 mb-1">
+                                数字位数 <span id="digit-count-value" class="text-primary font-bold">4</span>
+                            </label>
+                            <input type="range" id="digit-count" min="3" max="8" value="4" 
+                                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary">
+                            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>3位</span>
+                                <span>8位</span>
+                            </div>
+                        </div>
+                        
+                        <!-- 其他设置 -->
+                        <div class="space-y-3">
+                            <div class="flex items-center">
+                                <input id="include-zero" type="checkbox" checked 
+                                    class="w-4 h-4 text-primary focus:ring-primary border-gray-300 rounded">
+                                <label for="include-zero" class="ml-2 text-sm font-medium text-gray-700">
+                                    包含数字 0
+                                </label>
+                            </div>
+                            <div class="flex items-center">
+                                <input id="allow-repeat" type="checkbox" 
+                                    class="w-4 h-4 text-primary focus:ring-primary border-gray-300 rounded">
+                                <label for="allow-repeat" class="ml-2 text-sm font-medium text-gray-700">
+                                    允许重复数字
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 开始游戏按钮 -->
+                    <button type="submit" id="start-game" 
+                        class="w-full bg-primary hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg btn-hover flex items-center justify-center">
+                        <i class="fa fa-play-circle mr-2"></i> 开始游戏
+                    </button>
+                </form>
+            </div>
+
+            <!-- 游戏面板 (初始隐藏) -->
+            <div id="game-panel" class="p-6 hidden">
+                <!-- 游戏信息 -->
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-dark">游戏进行中</h2>
+                        <p class="text-sm text-gray-600">
+                            位数: <span id="game-digit-count" class="font-medium">4</span> | 
+                            包含0: <span id="game-include-zero" class="font-medium">是</span> | 
+                            可重复: <span id="game-allow-repeat" class="font-medium">否</span>
+                        </p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-gray-600">猜测次数</p>
+                        <p id="guess-count" class="text-3xl font-bold text-primary">0</p>
+                    </div>
+                </div>
+
+                <!-- 猜测输入 -->
+                <div class="mb-6">
+                    <form id="guess-form" class="space-y-3">
+                        <div>
+                            <label for="guess-input" class="block text-sm font-medium text-gray-700 mb-1">
+                                请输入 <span id="guess-digit-hint">4</span> 位数字
+                            </label>
+                            <div class="flex">
+                                <input type="text" id="guess-input" inputmode="numeric" maxlength="8" 
+                                    class="flex-1 w-full px-4 py-3 border border-gray-300 rounded-l-lg input-focus"
+                                    placeholder="例如: 1234">
+                                <button type="submit" id="submit-guess" 
+                                    class="bg-secondary hover:bg-green-600 text-white font-bold py-3 px-6 rounded-r-lg btn-hover">
+                                    猜测
+                                </button>
+                            </div>
+                            <p id="guess-error" class="text-red-500 text-sm mt-1 hidden">
+                                请输入正确格式的数字!
+                            </p>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- 智能提示 -->
+                <div id="hint-container" class="bg-blue-50 border-l-4 border-primary p-4 rounded-r-lg mb-6 hidden">
+                    <h3 class="font-bold text-primary flex items-center">
+                        <i class="fa fa-lightbulb-o mr-2"></i> 智能提示
+                    </h3>
+                    <p id="hint-text" class="text-sm text-gray-700 mt-1">
+                        根据你的猜测历史，尝试调整数字组合...
+                    </p>
+                </div>
+
+                <!-- 历史记录 -->
+                <div>
+                    <h3 class="font-bold text-gray-700 mb-2 flex items-center">
+                        <i class="fa fa-history mr-2"></i> 猜测历史
+                    </h3>
+                    <div id="history-container" class="max-h-64 overflow-y-auto pr-2 space-y-2">
+                        <p class="text-gray-500 text-sm italic text-center py-4">
+                            还没有猜测记录，开始你的第一次猜测吧！
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 游戏控制 -->
+                <div class="flex justify-between mt-6 pt-4 border-t border-gray-200">
+                    <button id="restart-game" 
+                        class="bg-accent hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg btn-hover">
+                        <i class="fa fa-refresh mr-1"></i> 重新开始
+                    </button>
+                    <button id="back-to-settings" 
+                        class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg btn-hover">
+                        <i class="fa fa-cog mr-1"></i> 返回设置
+                    </button>
+                </div>
+            </div>
+
+            <!-- 游戏胜利面板 (初始隐藏) -->
+            <div id="win-panel" class="p-6 hidden">
+                <div class="text-center">
+                    <div class="inline-block p-4 rounded-full bg-green-100 text-green-500 mb-4">
+                        <i class="fa fa-trophy text-5xl"></i>
+                    </div>
+                    <h2 class="text-3xl font-bold text-secondary mb-2">恭喜你赢了！</h2>
+                    <p class="text-gray-600 mb-6">
+                        你用了 <span id="win-guess-count" class="font-bold text-primary">0</span> 次猜测
+                        猜出了正确答案: <span id="win-answer" class="font-bold text-primary">1234</span>
+                    </p>
+                    
+                    <div class="space-y-3">
+                        <button id="play-again" 
+                            class="w-full bg-secondary hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg btn-hover">
+                            <i class="fa fa-refresh mr-2"></i> 再玩一次
+                        </button>
+                        <button id="change-settings" 
+                            class="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg btn-hover">
+                            <i class="fa fa-cog mr-2"></i> 修改设置
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <footer class="mt-8 text-center text-gray-500 text-sm">
+            <p>© 2025 猜数字游戏 | 一个简单有趣的逻辑思维挑战</p>
+        </footer>
+    </div>
+
+    <script>
+        // 游戏状态
+        const gameState = {
+            answer: '',
+            settings: {
+                digitCount: 4,
+                includeZero: true,
+                allowRepeat: false
+            },
+            guesses: [],
+            isGameActive: false
+        };
+
+        // DOM 元素
+        const elements = {
+            // 设置面板
+            settingsPanel: document.getElementById('settings-panel'),
+            digitCountSlider: document.getElementById('digit-count'),
+            digitCountValue: document.getElementById('digit-count-value'),
+            includeZeroCheckbox: document.getElementById('include-zero'),
+            allowRepeatCheckbox: document.getElementById('allow-repeat'),
+            startGameButton: document.getElementById('start-game'),
+            settingsForm: document.getElementById('settings-form'),
+            
+            // 游戏面板
+            gamePanel: document.getElementById('game-panel'),
+            gameDigitCount: document.getElementById('game-digit-count'),
+            gameIncludeZero: document.getElementById('game-include-zero'),
+            gameAllowRepeat: document.getElementById('game-allow-repeat'),
+            guessCount: document.getElementById('guess-count'),
+            guessInput: document.getElementById('guess-input'),
+            guessDigitHint: document.getElementById('guess-digit-hint'),
+            guessForm: document.getElementById('guess-form'),
+            guessError: document.getElementById('guess-error'),
+            hintContainer: document.getElementById('hint-container'),
+            hintText: document.getElementById('hint-text'),
+            historyContainer: document.getElementById('history-container'),
+            restartGameButton: document.getElementById('restart-game'),
+            backToSettingsButton: document.getElementById('back-to-settings'),
+            
+            // 胜利面板
+            winPanel: document.getElementById('win-panel'),
+            winGuessCount: document.getElementById('win-guess-count'),
+            winAnswer: document.getElementById('win-answer'),
+            playAgainButton: document.getElementById('play-again'),
+            changeSettingsButton: document.getElementById('change-settings')
+        };
+
+        // 初始化事件监听
+        function initEventListeners() {
+            // 设置面板事件
+            elements.digitCountSlider.addEventListener('input', handleDigitCountChange);
+            elements.settingsForm.addEventListener('submit', handleStartGame);
+            
+            // 游戏面板事件
+            elements.guessForm.addEventListener('submit', handleGuessSubmit);
+            elements.guessInput.addEventListener('input', handleGuessInput);
+            elements.restartGameButton.addEventListener('click', handleRestartGame);
+            elements.backToSettingsButton.addEventListener('click', handleBackToSettings);
+            
+            // 胜利面板事件
+            elements.playAgainButton.addEventListener('click', handlePlayAgain);
+            elements.changeSettingsButton.addEventListener('click', handleChangeSettings);
+        }
+
+        // 处理数字位数滑块变化
+        function handleDigitCountChange() {
+            const value = elements.digitCountSlider.value;
+            elements.digitCountValue.textContent = value;
+        }
+
+        // 处理开始游戏
+        function handleStartGame(e) {
+            e.preventDefault();
+            
+            // 更新游戏设置
+            gameState.settings = {
+                digitCount: parseInt(elements.digitCountSlider.value),
+                includeZero: elements.includeZeroCheckbox.checked,
+                allowRepeat: elements.allowRepeatCheckbox.checked
+            };
+            
+            // 生成答案
+            gameState.answer = generateAnswer();
+            gameState.guesses = [];
+            gameState.isGameActive = true;
+            
+            // 更新游戏面板显示
+            updateGamePanelDisplay();
+            
+            // 切换到游戏面板
+            elements.settingsPanel.classList.add('hidden');
+            elements.gamePanel.classList.remove('hidden');
+            elements.winPanel.classList.add('hidden');
+            
+            // 聚焦到猜测输入框
+            elements.guessInput.focus();
+        }
+
+        // 生成答案
+        function generateAnswer() {
+            const { digitCount, includeZero, allowRepeat } = gameState.settings;
+            let digits = [];
+            
+            // 确定可用数字范围
+            const minDigit = includeZero ? 0 : 1;
+            const maxDigit = 9;
+            
+            // 生成不重复的数字
+            if (!allowRepeat) {
+                const availableDigits = Array.from({length: maxDigit - minDigit + 1}, (_, i) => i + minDigit);
+                for (let i = 0; i < digitCount; i++) {
+                    const randomIndex = Math.floor(Math.random() * availableDigits.length);
+                    digits.push(availableDigits[randomIndex]);
+                    availableDigits.splice(randomIndex, 1);
+                }
+            } 
+            // 生成可重复的数字
+            else {
+                for (let i = 0; i < digitCount; i++) {
+                    digits.push(Math.floor(Math.random() * (maxDigit - minDigit + 1)) + minDigit);
+                }
+            }
+            
+            return digits.join('');
+        }
+
+        // 更新游戏面板显示
+        function updateGamePanelDisplay() {
+            const { digitCount, includeZero, allowRepeat } = gameState.settings;
+            
+            elements.gameDigitCount.textContent = digitCount;
+            elements.gameIncludeZero.textContent = includeZero ? '是' : '否';
+            elements.gameAllowRepeat.textContent = allowRepeat ? '是' : '否';
+            elements.guessCount.textContent = gameState.guesses.length;
+            elements.guessDigitHint.textContent = digitCount;
+            
+            // 更新输入框的 maxlength
+            elements.guessInput.maxLength = digitCount;
+            
+            // 清空历史记录
+            clearHistory();
+        }
+
+        // 处理猜测输入
+        function handleGuessInput() {
+            // 只允许输入数字
+            elements.guessInput.value = elements.guessInput.value.replace(/[^0-9]/g, '');
+            
+            // 隐藏错误提示
+            elements.guessError.classList.add('hidden');
+        }
+
+        // 处理猜测提交
+        function handleGuessSubmit(e) {
+            e.preventDefault();
+            
+            const guess = elements.guessInput.value.trim();
+            const { digitCount, includeZero } = gameState.settings;
+            
+            // 验证输入
+            if (guess.length !== digitCount) {
+                showGuessError(`请输入 ${digitCount} 位数字!`);
+                return;
+            }
+            
+            // 如果不允许包含0，检查是否有0
+            if (!includeZero && guess.includes('0')) {
+                showGuessError('根据设置，答案不包含数字 0!');
+                return;
+            }
+            
+            // 检查是否有重复数字（如果设置不允许重复）
+            if (!gameState.settings.allowRepeat) {
+                const uniqueDigits = new Set(guess.split(''));
+                if (uniqueDigits.size !== digitCount) {
+                    showGuessError('根据设置，答案中没有重复数字!');
+                    return;
+                }
+            }
+            
+            // 计算匹配位数
+            const matchCount = countMatches(guess, gameState.answer);
+            
+            // 添加到猜测历史
+            gameState.guesses.push({
+                guess,
+                matchCount,
+                isCorrect: matchCount === digitCount
+            });
+            
+            // 更新猜测次数
+            elements.guessCount.textContent = gameState.guesses.length;
+            
+            // 更新历史记录
+            updateHistory();
+            
+            // 生成智能提示
+            generateHint();
+            
+            // 检查是否猜对
+            if (matchCount === digitCount) {
+                handleWin();
+            }
+            
+            // 清空输入框
+            elements.guessInput.value = '';
+        }
+
+        // 显示猜测错误
+        function showGuessError(message) {
+            elements.guessError.textContent = message;
+            elements.guessError.classList.remove('hidden');
+            
+            // 添加错误动画
+            elements.guessInput.classList.add('border-red-500');
+            setTimeout(() => {
+                elements.guessInput.classList.remove('border-red-500');
+            }, 500);
+        }
+
+        // 计算匹配位数
+        function countMatches(guess, answer) {
+            let count = 0;
+            for (let i = 0; i < guess.length; i++) {
+                if (guess[i] === answer[i]) {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        // 更新历史记录
+        function updateHistory() {
+            // 清空历史容器
+            elements.historyContainer.innerHTML = '';
+            
+            // 如果没有历史记录，显示提示
+            if (gameState.guesses.length === 0) {
+                elements.historyContainer.innerHTML = `
+                    <p class="text-gray-500 text-sm italic text-center py-4">
+                        还没有猜测记录，开始你的第一次猜测吧！
+                    </p>
+                `;
+                return;
+            }
+            
+            // 添加历史记录
+            gameState.guesses.forEach((item, index) => {
+                const historyItem = document.createElement('div');
+                historyItem.className = `history-item ${item.isCorrect ? 'history-match' : ''}`;
+                
+                // 添加动画延迟
+                historyItem.style.animationDelay = `${index * 0.1}s`;
+                historyItem.classList.add('animate-fadeIn');
+                
+                historyItem.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="font-medium">${item.guess}</span>
+                        <span class="text-sm ${item.isCorrect ? 'text-green-600 font-bold' : 'text-gray-600'}">
+                            ${item.isCorrect ? '✓ 正确' : `匹配: ${item.matchCount}/${gameState.settings.digitCount}`}
+                        </span>
+                    </div>
+                    <div class="text-xs text-gray-500">第 ${index + 1} 次猜测</div>
+                `;
+                
+                elements.historyContainer.appendChild(historyItem);
+            });
+            
+            // 滚动到底部
+            elements.historyContainer.scrollTop = elements.historyContainer.scrollHeight;
+        }
+
+        // 清空历史记录
+        function clearHistory() {
+            elements.historyContainer.innerHTML = `
+                <p class="text-gray-500 text-sm italic text-center py-4">
+                    还没有猜测记录，开始你的第一次猜测吧！
+                </p>
+            `;
+            elements.hintContainer.classList.add('hidden');
+        }
+
+        // 生成智能提示
+        function generateHint() {
+            // 至少有两次猜测才显示提示
+            if (gameState.guesses.length < 2) {
+                elements.hintContainer.classList.add('hidden');
+                return;
+            }
+            
+            const recentGuesses = gameState.guesses.slice(-2);
+            let hint = '';
+            
+            // 分析最近两次猜测
+            if (recentGuesses[1].matchCount > recentGuesses[0].matchCount) {
+                hint = '很好！你的猜测正在接近正确答案，继续保持这个方向。';
+            } else if (recentGuesses[1].matchCount < recentGuesses[0].matchCount) {
+                hint = '匹配位数减少了，可能需要尝试不同的数字组合。';
+            } else {
+                hint = '匹配位数没有变化，尝试保留部分数字，调整其他位置。';
+            }
+            
+            // 如果有多次猜测，可以提供更具体的提示
+            if (gameState.guesses.length >= 5) {
+                const uniqueDigits = new Set();
+                gameState.guesses.forEach(g => {
+                    g.guess.split('').forEach(d => uniqueDigits.add(d));
+                });
+                
+                if (uniqueDigits.size < gameState.settings.digitCount * 1.5) {
+                    hint += ' 你可能在使用相似的数字，尝试引入一些新的数字。';
+                }
+            }
+            
+            // 更新提示文本并显示
+            elements.hintText.textContent = hint;
+            elements.hintContainer.classList.remove('hidden');
+        }
+
+        // 处理胜利
+        function handleWin() {
+            gameState.isGameActive = false;
+            
+            // 更新胜利面板
+            elements.winGuessCount.textContent = gameState.guesses.length;
+            elements.winAnswer.textContent = gameState.answer;
+            
+            // 切换到胜利面板
+            elements.gamePanel.classList.add('hidden');
+            elements.winPanel.classList.remove('hidden');
+        }
+
+        // 处理重新开始游戏
+        function handleRestartGame() {
+            // 生成新答案
+            gameState.answer = generateAnswer();
+            gameState.guesses = [];
+            
+            // 更新游戏面板
+            updateGamePanelDisplay();
+            
+            // 聚焦到输入框
+            elements.guessInput.focus();
+        }
+
+        // 处理返回设置
+        function handleBackToSettings() {
+            // 重置游戏状态
+            gameState.isGameActive = false;
+            gameState.guesses = [];
+            
+            // 切换到设置面板
+            elements.gamePanel.classList.add('hidden');
+            elements.settingsPanel.classList.remove('hidden');
+        }
+
+        // 处理再玩一次
+        function handlePlayAgain() {
+            // 生成新答案
+            gameState.answer = generateAnswer();
+            gameState.guesses = [];
+            
+            // 更新游戏面板
+            updateGamePanelDisplay();
+            
+            // 切换到游戏面板
+            elements.winPanel.classList.add('hidden');
+            elements.gamePanel.classList.remove('hidden');
+            
+            // 聚焦到输入框
+            elements.guessInput.focus();
+        }
+
+        // 处理修改设置
+        function handleChangeSettings() {
+            // 重置游戏状态
+            gameState.isGameActive = false;
+            gameState.guesses = [];
+            
+            // 切换到设置面板
+            elements.winPanel.classList.add('hidden');
+            elements.settingsPanel.classList.remove('hidden');
+        }
+
+        // 初始化游戏
+        function initGame() {
+            initEventListeners();
+            console.log('猜数字游戏已初始化');
+        }
+
+        // 启动游戏
+        document.addEventListener('DOMContentLoaded', initGame);
+    </script>
+</body>
+</html>
