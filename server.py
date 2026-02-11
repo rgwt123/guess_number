@@ -25,6 +25,7 @@ room_lock = Lock()
 
 # 房间清理配置
 ROOM_CLEANUP_DELAY = 120  # 2分钟
+ROOM_FORCE_CLEANUP_DELAY = ROOM_CLEANUP_DELAY * 2
 
 
 def generate_room_id():
@@ -107,12 +108,16 @@ def cleanup_room(room_id):
     with room_lock:
         if room_id in rooms:
             room = rooms[room_id]
-            if len(room['players']) == 0:
-                # 检查是否过了清理时间
-                if time.time() - room['last_activity'] > ROOM_CLEANUP_DELAY:
-                    del rooms[room_id]
-                    print(f"房间 {room_id} 已清理")
-                    broadcast_room_list()
+            idle_seconds = time.time() - room['last_activity']
+            if room['status'] != 'playing' and idle_seconds > ROOM_FORCE_CLEANUP_DELAY:
+                del rooms[room_id]
+                print(f"房间 {room_id} 已清理")
+                broadcast_room_list()
+                return
+            if len(room['players']) == 0 and idle_seconds > ROOM_CLEANUP_DELAY:
+                del rooms[room_id]
+                print(f"房间 {room_id} 已清理")
+                broadcast_room_list()
 
 
 def inherit_host(room_id):
@@ -961,9 +966,12 @@ def cleanup_rooms_task():
         now = time.time()
         to_remove = []
         for room_id, room in rooms.items():
-            if len(room['players']) == 0:
-                if now - room['last_activity'] > ROOM_CLEANUP_DELAY:
-                    to_remove.append(room_id)
+            idle_seconds = now - room['last_activity']
+            if room['status'] != 'playing' and idle_seconds > ROOM_FORCE_CLEANUP_DELAY:
+                to_remove.append(room_id)
+                continue
+            if len(room['players']) == 0 and idle_seconds > ROOM_CLEANUP_DELAY:
+                to_remove.append(room_id)
         
         for room_id in to_remove:
             del rooms[room_id]
