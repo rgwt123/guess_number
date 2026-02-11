@@ -5,6 +5,10 @@
 支持：创建房间、加入房间、自由模式、轮次模式、实时聊天
 """
 
+import eventlet
+
+eventlet.monkey_patch()
+
 import random
 import string
 import time
@@ -16,7 +20,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'guess-number-game-secret-key'
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 # 游戏数据存储（内存中）
 rooms = {}  # {room_id: room_data}
